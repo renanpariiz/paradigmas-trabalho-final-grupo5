@@ -1,4 +1,4 @@
-"""Testes HTTP da integração Ocaso."""
+"""Testes da API e da integração com o Prolog."""
 
 import pytest
 from fastapi.testclient import TestClient

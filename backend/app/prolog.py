@@ -1,4 +1,4 @@
-"""Ponte entre Python e Prolog usando a biblioteca janus."""
+"""conecta a api python aos predicados do ocaso em prolog"""
 
 from pathlib import Path
 from typing import Any
@@ -10,10 +10,11 @@ janus.consult(str(PROLOG_FILE))
 
 
 class NoSolution(Exception):
-    """O puzzle não tem solução compatível com as regras."""
+    """usada quando o puzzle não tem solução"""
 
 
 def generate(difficulty: str) -> dict[str, Any]:
+    """gera um puzzle na dificuldade escolhida"""
     result = janus.query_once(
         "ocaso:api_generate(Name, Puzzle)",
         {"Name": difficulty},
@@ -22,6 +23,7 @@ def generate(difficulty: str) -> dict[str, Any]:
 
 
 def solve(puzzle: dict[str, Any]) -> list[list[int]]:
+    """resolve o puzzle ou levanta `nosolution` se não houver solução"""
     result = janus.query_once(
         "ocaso:api_solve(Puzzle, Towers)",
         {"Puzzle": puzzle},
@@ -32,6 +34,7 @@ def solve(puzzle: dict[str, Any]) -> list[list[int]]:
 
 
 def hint(puzzle: dict[str, Any], placed: list[list[int]]) -> dict[str, Any]:
+    """pede uma dica para o puzzle com as casas já preenchidas"""
     result = janus.query_once(
         "ocaso:api_hint(Puzzle, Placed, Hint)",
         {

@@ -1,4 +1,4 @@
-"""API HTTP do Ocaso; as regras e buscas ficam no Prolog."""
+"""rotas e validações da api do ocaso"""
 
 from typing import Annotated, Literal, Union
 
@@ -17,6 +17,8 @@ Given = Annotated[list[int], Field(min_length=3, max_length=3)]
 
 
 class PuzzleData(BaseModel):
+    """dados do puzzle e validações entre seus campos"""
+
     size: Literal[5, 6, 7]
     suns: list[Literal["west", "east"]]
     rows: list[ClueValue]
@@ -26,9 +28,11 @@ class PuzzleData(BaseModel):
 
     @classmethod
     def _coordinate_is_valid(cls, row: int, col: int, size: int) -> bool:
+        """confere se a posição fica dentro do tabuleiro"""
         return 0 <= row < size and 0 <= col < size
 
     def model_post_init(self, __context: object) -> None:
+        """confere dimensões, pistas e posições do puzzle"""
         if not (
             len(self.suns) == len(self.rows) == len(self.cols) == self.size
         ):
@@ -58,10 +62,13 @@ class GenerateRequest(BaseModel):
 
 
 class HintRequest(BaseModel):
+    """dados necessários para pedir uma dica"""
+
     puzzle: PuzzleData
     placed: list[Given]
 
     def model_post_init(self, __context: object) -> None:
+        """confere se as casas preenchidas são válidas"""
         size = self.puzzle.size
         placed_positions = [tuple(cell[:2]) for cell in self.placed]
         fixed_positions = {
@@ -124,11 +131,13 @@ NO_SOLUTION = "Este puzzle não tem solução. Confira as casas decididas."
 
 @app.post("/api/generate", response_model=PuzzleData)
 def generate(request: GenerateRequest) -> dict:
+    """gera um puzzle no nível escolhido"""
     return prolog.generate(request.difficulty)
 
 
 @app.post("/api/solve")
 def solve(puzzle: PuzzleData) -> dict[str, list[list[int]]]:
+    """resolve o puzzle ou informa que ele não tem solução"""
     try:
         towers = prolog.solve(puzzle.model_dump(mode="python"))
     except prolog.NoSolution:
@@ -138,6 +147,7 @@ def solve(puzzle: PuzzleData) -> dict[str, list[list[int]]]:
 
 @app.post("/api/hint", response_model=HintResponse)
 def hint(request: HintRequest) -> dict:
+    """busca uma dica para o estado atual do puzzle"""
     placed = [list(cell) for cell in request.placed]
     result = prolog.hint(request.puzzle.model_dump(mode="python"), placed)
     if result["kind"] == "unsolvable":
