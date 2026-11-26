@@ -1,58 +1,37 @@
-/*  ocaso.pl: as regras, o resolvedor, o gerador e as dicas do jogo Ocaso.
+/*  ocaso.pl regras resolvedor gerador e dicas do Ocaso
 
-    O JOGO
-    ------
-    Ao entardecer, o sol está baixo e cada torre projeta uma sombra comprida.
-    O tabuleiro é uma grade N x N. Cada casa é um LAGO (fixo, faz parte do
-    puzzle) ou um terreno, que pode estar vazio ou ter uma torre de altura
-    1, 2 ou 3.
+    O jogo é um tabuleiro N x N e cada casa é lago ou terreno
+    Terreno pode ficar vazio ou ter torre de altura 1 2 ou 3
+    Em cada linha o sol vem do oeste ou do leste e uma torre de altura H
+    faz sombra nas H casas seguintes pro lado contrário do sol
+    A sombra para na borda
 
-    Em cada linha o sol vem de um lado (oeste ou leste, mostrado no
-    tabuleiro). Uma torre de altura H faz sombra nas H casas seguintes, no
-    sentido oposto ao do sol. A sombra é cortada na borda do tabuleiro.
+    Regras
+      1 sol  torre não pode ficar na sombra de outra
+      2 lagos  todo lago tem que estar na sombra e lago não tem torre
+      3 linhas  a pista da linha é quantas casas dela estão na sombra
+        contando os lagos
+      4 colunas  a pista da coluna é a soma das alturas das torres dela
 
-    As quatro regras:
+    Algumas casas já vêm reveladas pra só ter uma solução
 
-        1. SOL     nenhuma torre pode ficar na sombra de outra;
-        2. LAGOS   todo lago precisa estar na sombra;
-        3. LINHAS  o número no fim da linha diz quantas casas dela estão na
-                   sombra (lagos inclusive);
-        4. COLUNAS o número no alto da coluna é a soma das alturas das torres
-                   dessa coluna.
-
-    Lagos nunca têm torre. Algumas casas podem vir reveladas no início, para
-    que a solução seja única.
-
-    REPRESENTAÇÃO
-    -------------
-    Dentro deste arquivo um puzzle é o termo
-
+    Como o puzzle fica guardado aqui dentro
         puzzle(Tamanho, Sois, PistasLinhas, PistasColunas, Lagos, Reveladas)
+    Sois = [west, east, ...] um por linha
+    Lagos = [L-C, ...]
+    Reveladas = [cell(L, C, Altura), ...]  altura 0 é sem torre
+    Linha e coluna começam do 0 e a solução é uma lista de linhas com a
+    altura de cada casa de 0 a 3
 
-    com Sois = [west, east, ...] (um por linha), Lagos = [L-C, ...] e
-    Reveladas = [cell(L, C, Altura), ...], em que Altura 0 é "sem torre".
-    Linhas e colunas contam a partir de 0.
+    Tudo foi feito com restrição do CLP(FD)
+    Cada casa tem uma variável de altura 0..3 e uma de sombra 0 ou 1 e as
+    regras viram somas e implicações entre elas
+    Com esse mesmo modelo dá pra resolver com labeling contar soluções
+    parando na segunda gerar só com a parte da sombra e valores sorteados
+    e explicar as dicas ligando uma regra por vez pra ver qual já proíbe
+    o valor
 
-    Uma solução é uma lista de N linhas com N alturas cada (0 a 3).
-
-    A IDEIA CENTRAL
-    ---------------
-    Tudo é escrito como RESTRIÇÕES do CLP(FD). Cada casa ganha duas
-    variáveis: a altura H (0..3) e a sombra S (0 ou 1). A definição de
-    sombra é uma equivalência lógica (S é 1 se e só se alguma torre "alcança"
-    a casa) e as regras são somas e implicações sobre H e S.
-
-    O mesmo modelo serve para quatro coisas diferentes, sem nenhum algoritmo
-    específico para cada uma:
-
-        * resolver:  impor tudo e pedir valores (labeling);
-        * contar soluções: o mesmo, coletando até 2 respostas;
-        * gerar:     impor só a geometria e sortear valores;
-        * explicar:  impor UMA regra de cada vez e ver qual delas, sozinha,
-                     já torna um valor impossível.
-
-    COMO TESTAR NO TERMINAL
-    -----------------------
+    Pra testar no terminal
         $ swipl backend/prolog/ocaso.pl
         ?- example_puzzle(P), print_puzzle(P).
         ?- example_puzzle(P), solve(P, T), print_solution(P, T).
@@ -74,68 +53,57 @@
             api_hint/3          % +PuzzleDict, +Placed, -HintDict
           ]).
 
-%   +Arg: entrada (instanciada); -Arg: saída; ?Arg: tanto faz.
+% + é entrada - é saída ? pode ser os dois
 
 :- use_module(library(clpfd)).
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(yall)).    % lambdas: [X] >> objetivo
 
-%   Cuidado com lambdas: uma variável que aparece no corpo do lambda mas
-%   não nos parâmetros é tratada como LOCAL (renomeada a cada chamada).
-%   Por isso só usamos lambdas cujo corpo depende apenas dos parâmetros;
-%   nos outros casos, um predicado auxiliar com nome.
+% Obs no yall uma variável que aparece só no corpo do lambda vira local
+% Isso deu bug aqui com linhas vazias e o programa travando então onde o
+% lambda precisava de variável de fora trocamos por predicado auxiliar
 :- use_module(library(pairs)).
 :- use_module(library(random)).
 :- use_module(library(solution_sequences)).
 
 
-/* =========================================================================
-   1. GEOMETRIA DA SOMBRA
-   ========================================================================= */
+%% ---- 1 Sombra ------------------------------------------------------
 
-%!  row_shadows(?Sun, ?Heights, ?Shade) is det.
-%
-%   Relaciona as alturas de uma linha com as casas sombreadas dela. Funciona
-%   nos dois sentidos: com as alturas conhecidas calcula a sombra, e com a
-%   sombra conhecida restringe as alturas possíveis.
-%
-%       ?- row_shadows(west, [2,0,0,1,0], S).
-%       S = [0,1,1,0,1].
-%
-%   Com o sol a leste, a sombra anda para oeste. Em vez de escrever uma
-%   segunda versão, invertemos a linha: o leste vira oeste.
+% row_shadows(Sol, Alturas, Sombra)
+% Liga as alturas de uma linha com as casas que ficam na sombra
+% Funciona pros dois lados com as alturas ele calcula a sombra e com a
+% sombra ele limita as alturas possíveis
+%   ?- row_shadows(west, [2,0,0,1,0], S).    dá S = [0,1,1,0,1]
+% Sol a leste é a mesma coisa com a linha invertida então a gente
+% reaproveita o caso do oeste
 row_shadows(west, Heights, Shade) :-
     cast(Heights, [], Shade).
 row_shadows(east, Heights, Shade) :-
-    % same_length/2 fixa o tamanho de Shade antes de invertê-la. Sem isso,
-    % reverse/2 com uma lista ainda sem tamanho deixa um ponto de escolha
-    % que, no backtracking, tenta listas cada vez maiores para sempre.
+    % Sem o same_length o reverse entrava em loop no backtracking porque
+    % Shade ainda não tinha tamanho
     same_length(Heights, Shade),
     reverse(Heights, ReversedHeights),
     reverse(Shade, ReversedShade),
     cast(ReversedHeights, [], ReversedShade).
 
-%   cast(?Heights, +Behind, ?Shade)
-%   Percorre a linha no sentido em que a sombra anda. Behind guarda as
-%   alturas das até 3 casas anteriores, da mais próxima para a mais
-%   distante: só elas podem alcançar a casa atual, porque a torre mais alta
-%   tem altura 3.
+% cast anda pela linha no sentido da sombra
+% Behind guarda as alturas das 3 casas de antes com a mais perto primeiro
+% Mais longe que isso nenhuma torre alcança já que a altura máxima é 3
 cast([], _Behind, []).
 cast([H | Hs], Behind, [S | Ss]) :-
     S in 0..1,
     reaches(Behind, 1, Reach),
-    % #<==> é a equivalência reificada: S vale 1 exatamente quando a
-    % fórmula Reach é verdadeira. Não dizemos COMO calcular S; dizemos o que
-    % S significa, e a propagação funciona nos dois sentidos.
+    % S é 1 se e somente se Reach for verdade
+    % Como é restrição e não conta funciona nos dois sentidos
     S #<==> Reach,
     nearest_three([H | Behind], Behind1),
     cast(Hs, Behind1, Ss).
 
-%   reaches(+Behind, +Distance, -Formula)
-%   Monta a fórmula "a torre à distância 1 tem altura >= 1, OU a torre à
-%   distância 2 tem altura >= 2, OU ...". Sem casas atrás, a fórmula é 0
-%   (falso): a primeira casa da linha nunca está na sombra.
+% reaches monta torre a 1 casa tem altura >= 1 ou torre a 2 casas tem
+% altura >= 2 ou etc
+% Sem nada atrás vira 0 que é falso por isso a primeira casa da linha
+% nunca fica na sombra
 reaches([], _Distance, 0).
 reaches([H | Hs], Distance, (H #>= Distance) #\/ Rest) :-
     Next is Distance + 1,
@@ -150,19 +118,13 @@ nearest_three(List, Prefix) :-
     ).
 
 
-/* =========================================================================
-   2. O MODELO: VARIÁVEIS, CASAS CONHECIDAS E REGRAS
-   ========================================================================= */
+%% ---- 2 Modelo e regras ----------------------------------------------
 
-%!  board_model(+Puzzle, +Known, +Rules, -Towers, -Shade) is semidet.
-%
-%   Cria as variáveis do tabuleiro e impõe: a geometria da sombra, os lagos
-%   sem torre, as casas conhecidas (reveladas pelo puzzle e as de Known) e
-%   as regras pedidas em Rules. Falha se a propagação já encontrar uma
-%   contradição.
-%
-%   Rules é uma lista com elementos sun, lakes, rows, cols, row(L), col(C).
-%   Escolher QUAIS regras impor é o que permite explicar as dicas (seção 5).
+% board_model(Puzzle, Conhecidas, Regras, Torres, Sombra)
+% Cria as variáveis e coloca a sombra os lagos sem torre as casas que já
+% sabemos e só as regras que estão em Regras
+% Dá pra escolher as regras e a gente usa isso nas dicas
+% Falha se já der contradição
 board_model(puzzle(N, Suns, RowClues, ColClues, Lakes, Givens),
             Known, Rules, Towers, Shade) :-
     square(N, Towers),
@@ -178,7 +140,7 @@ board_model(puzzle(N, Suns, RowClues, ColClues, Lakes, Givens),
 
 all_rules([sun, lakes, rows, cols]).
 
-%   square(+N, -Rows): N linhas de N variáveis novas.
+% square(N, Linhas) faz uma matriz N x N de variáveis novas
 square(N, Rows) :-
     length(Rows, N),
     maplist(length_of(N), Rows).
@@ -197,9 +159,7 @@ cell_at(Grid, L, C, Value) :-
     nth0(L, Grid, Row),
     nth0(C, Row, Value).
 
-%!  rule(+Board, +Rule) is semidet.
-%
-%   Cada cláusula impõe uma das regras do jogo.
+% Uma cláusula pra cada regra
 rule(board(Towers, Shade, _, _, _), sun) :-
     append(Towers, Heights),
     append(Shade, Shadows),
@@ -221,7 +181,7 @@ rule(board(Towers, _, _, ColClues, _), col(C)) :-
     nth0(C, ColClues, Clue),
     sum_is(Column, Clue).
 
-%   Na sombra (S = 1), a altura tem de ser 0. É a regra 1 como implicação.
+% Regra do sol se a casa tá na sombra a altura é 0
 in_sun(Height, Shadow) :-
     Shadow #==> Height #= 0.
 
@@ -232,29 +192,22 @@ sum_is(Vars, Total) :-
     sum(Vars, #=, Total).
 
 
-/* =========================================================================
-   3. RESOLVER E CONTAR SOLUÇÕES
-   ========================================================================= */
+%% ---- 3 Resolver -----------------------------------------------------
 
-%!  solve(+Puzzle, -Towers) is semidet.
-%
-%   Towers é a (primeira) solução de Puzzle; falha se não houver nenhuma.
+% solve pega a primeira solução e falha se não tiver nenhuma
 solve(Puzzle, Towers) :-
     solution(Puzzle, [], Towers),
     !.
 
-%   solution(+Puzzle, +Known, -Towers) is nondet.
-%   Enumera, por backtracking, todas as soluções compatíveis com Known.
+% solution devolve todas as soluções uma por backtracking
 solution(Puzzle, Known, Towers) :-
     all_rules(Rules),
     board_model(Puzzle, Known, Rules, Towers, _Shade),
     append(Towers, Heights),
     labeling([ff], Heights).
 
-%!  count_solutions(+Puzzle, +Limit, -Count) is det.
-%
-%   Quantas soluções Puzzle tem, contando até Limit. Com Limit = 2 sabemos
-%   se a solução é única sem enumerar todas.
+% Conta as soluções até Limit
+% Pra saber se é única basta Limit = 2 não precisa achar todas
 count_solutions(Puzzle, Limit, Count) :-
     aggregate_all(count, limit(Limit, solution(Puzzle, [], _)), Count).
 
@@ -262,29 +215,23 @@ unique(Puzzle) :-
     count_solutions(Puzzle, 2, 1).
 
 
-/* =========================================================================
-   4. GERADOR
-   =========================================================================
+%% ---- 4 Gerador ------------------------------------------------------
+%
+% Passo a passo
+%  - Sorteia o sol de cada linha e as torres só com a regra do sol
+%    usando o mesmo modelo com labeling em ordem aleatória
+%  - Escolhe uns lagos entre as casas que ficaram na sombra
+%  - Calcula as pistas a partir dessa solução
+%  - Enquanto tiver mais de uma solução revela uma casa onde duas
+%    soluções são diferentes e depois tenta esconder de novo cada revelada
+%  - No fácil e no médio revela mais algumas casas
 
-   (a) Sorteamos o lado do sol em cada linha e uma distribuição de torres
-       que respeite a regra do sol. Usamos o mesmo modelo, só com a
-       geometria e a regra `sun`, e uma busca que testa os valores em ordem
-       aleatória.
-   (b) Escolhemos alguns lagos entre as casas que ficaram na sombra.
-   (c) As pistas saem da própria solução: casas sombreadas por linha e
-       soma das alturas por coluna.
-   (d) Enquanto houver mais de uma solução, revelamos uma casa em que duas
-       soluções discordam. Depois tentamos esconder cada casa revelada e
-       mantemos escondidas as que não quebram a unicidade.
-   (e) Nos níveis mais fáceis, revelamos algumas casas a mais.
-*/
-
-%!  level(?Difficulty, ?Size, ?ExtraGivens) is nondet.
+% Nível tamanho do tabuleiro e casas extras reveladas
 level(easy,   5, 3).
 level(medium, 6, 1).
 level(hard,   7, 0).
 
-%!  generate(+Difficulty, -Puzzle) is det.
+% generate(Nivel, Puzzle)
 generate(Difficulty, Puzzle) :-
     must_be(oneof([easy, medium, hard]), Difficulty),
     level(Difficulty, N, Extra),
@@ -300,11 +247,9 @@ generate(Difficulty, Puzzle) :-
     minimize_givens(Unique, Minimal),
     add_givens(Extra, Towers, Minimal, Puzzle).
 
-%!  random_layout(+N, -Suns, -Towers, -Shade) is semidet.
-%
-%   Uma distribuição aleatória de torres em que nenhuma fica na sombra e
-%   cada linha tem pelo menos uma torre (esta última exigência é só do
-%   gerador, para o tabuleiro não sair vazio; não é regra do jogo).
+% Torres aleatórias sem nenhuma na sombra
+% Também exige pelo menos uma torre por linha mas isso é só pra não sair
+% linha vazia não é regra do jogo
 random_layout(N, Suns, Towers, Shade) :-
     length(Suns, N),
     maplist(random_member_of([west, east]), Suns),
@@ -324,9 +269,8 @@ has_tower(Row) :-
 is_tower(Height, Flag) :-
     Flag #<==> Height #> 0.
 
-%   random_labeling(+Vars) is nondet.
-%   Como label/1, mas em ordem aleatória e com preferência por casas vazias
-%   (senão o tabuleiro fica lotado de torres).
+% Parecido com label/1 mas sorteando a ordem dos valores e com mais
+% chance de tentar o 0 primeiro senão o tabuleiro enche de torre
 random_labeling([]).
 random_labeling([Var | Vars]) :-
     random_value_order(Order),
@@ -340,10 +284,8 @@ random_value_order(Order) :-
     ;   append(Towers, [0], Order)
     ).
 
-%   random_lakes(+N, +Shade, -Lakes) is semidet.
-%   Cada casa sombreada vira lago com 45% de chance. Exige ao menos N/2
-%   lagos, para o puzzle ficar interessante; senão o `repeat` de generate/2
-%   sorteia outro tabuleiro.
+% Cada casa na sombra tem 45% de chance de virar lago
+% Se sair menos de N/2 lagos falha e o repeat do generate tenta outro
 random_lakes(N, Shade, Lakes) :-
     findall(L-C,
             ( cell_at(Shade, L, C, 1),
@@ -352,7 +294,7 @@ random_lakes(N, Shade, Lakes) :-
     length(Lakes, Count),
     Count >= N // 2.
 
-%!  make_unique(+Puzzle0, +Towers, -Puzzle) is det.
+% Vai revelando casas até sobrar uma solução só
 make_unique(Puzzle0, Towers, Puzzle) :-
     findall(T, limit(2, solution(Puzzle0, [], T)), Solutions),
     (   Solutions = [_]
@@ -372,10 +314,8 @@ reveal(L-C, Towers, puzzle(N, S, R, K, Lakes, Givens),
        puzzle(N, S, R, K, Lakes, [cell(L, C, H) | Givens])) :-
     cell_at(Towers, L, C, H).
 
-%!  minimize_givens(+Puzzle0, -Puzzle) is det.
-%
-%   Tenta esconder cada casa revelada, em ordem aleatória. Uma casa só
-%   continua revelada se escondê-la permitir uma segunda solução.
+% Tenta esconder cada casa revelada em ordem aleatória
+% Se continuar com uma solução só ela fica escondida
 minimize_givens(puzzle(N, S, R, K, Lakes, Givens), Puzzle) :-
     random_permutation(Givens, Order),
     foldl(try_hide, Order, puzzle(N, S, R, K, Lakes, Givens), Puzzle).
@@ -388,8 +328,7 @@ try_hide(Given, puzzle(N, S, R, K, Lakes, Givens), Puzzle) :-
     ;   Puzzle = puzzle(N, S, R, K, Lakes, Givens)
     ).
 
-%   add_givens(+Count, +Towers, +Puzzle0, -Puzzle)
-%   Revela Count casas a mais (que não sejam lagos nem já reveladas).
+% Revela mais Count casas que não sejam lago nem já estejam reveladas
 add_givens(Count, Towers, puzzle(N, S, R, K, Lakes, Givens), Puzzle) :-
     findall(L-C,
             ( cell_at(Towers, L, C, _),
@@ -407,34 +346,25 @@ reveal_in(Towers, Position, Puzzle0, Puzzle) :-
     reveal(Position, Towers, Puzzle0, Puzzle).
 
 
-/* =========================================================================
-   5. DICAS COM EXPLICAÇÃO
-   =========================================================================
+%% ---- 5 Dicas --------------------------------------------------------
+%
+% Placed são as casas que o jogador já preencheu no formato cell(L, C, Altura)
+% A dica pode ser
+%   wrong(L, C, Altura, Motivo)          uma casa do jogador tá errada
+%   cell(L, C, Altura, Como, Excluidos)  a próxima casa pra preencher
+%       Como é propagation quando as regras já decidem a casa direto
+%       ou search quando precisa testar
+%       Excluidos = [Valor-Motivo, ...] fala por que cada outro valor não
+%       serve
+%   complete                             não falta nenhuma casa
+%
+% Motivo é a menor lista de regras que já impede o valor
+% Primeiro tenta uma regra só tipo [row(2)] depois pares tipo
+% [lakes, col(3)] e se nada disso basta vem [] que quer dizer que precisa
+% de todas juntas
+% As regras testadas são sun lakes e a linha e a coluna da casa
 
-   O jogador manda as casas que já decidiu (Placed = [cell(L, C, Altura)]).
-   A dica pode ser:
-
-     wrong(L, C, Altura, Motivo)   uma casa decidida está errada, e Motivo
-                                   diz qual regra a contradiz;
-     cell(L, C, Altura, Como, Excluídos)
-                                   a próxima casa a decidir. Como é
-                                   `propagation` se as regras já a
-                                   determinam sem nenhuma tentativa, ou
-                                   `search` se é preciso testar hipóteses.
-                                   Excluídos = [Valor-Motivo, ...] explica
-                                   por que cada um dos outros valores é
-                                   impossível;
-     complete                      não há casa por decidir.
-
-   O Motivo é a lista das regras que justificam a exclusão: a primeira
-   regra que, SOZINHA (com as casas já conhecidas), torna o valor
-   impossível, como [row(2)]; senão, o primeiro PAR de regras que basta,
-   como [lakes, col(3)]; senão, a lista vazia, que quer dizer "só todas as
-   regras juntas". As regras candidatas são sun, lakes, row(L) e col(C),
-   em que L e C são a linha e a coluna da casa.
-*/
-
-%!  hint(+Puzzle, +Placed, -Hint) is det.
+% hint(Puzzle, Placed, Dica)
 hint(Puzzle, Placed, Hint) :-
     solve(Puzzle, Solution),
     partition(agrees_with(Solution), Placed, Correct, Wrong),
@@ -454,8 +384,7 @@ hint(Puzzle, Placed, Hint) :-
 agrees_with(Solution, cell(L, C, Height)) :-
     cell_at(Solution, L, C, Height).
 
-%   undecided(+Puzzle, +Placed, -Open): casas que não são lagos, nem foram
-%   reveladas pelo puzzle, nem decididas pelo jogador.
+% Casas que ainda faltam nem lago nem revelada nem preenchida
 undecided(puzzle(N, _, _, _, Lakes, Givens), Placed, Open) :-
     Last is N - 1,
     findall(L-C,
@@ -466,12 +395,9 @@ undecided(puzzle(N, _, _, _, Lakes, Givens), Placed, Open) :-
               \+ memberchk(cell(L, C, _), Placed) ),
             Open).
 
-%!  easiest_cell(+Puzzle, +Known, +Open, -Position, -How) is det.
-%
-%   Impõe todas as regras SEM buscar (sem labeling) e olha o domínio que a
-%   propagação deixou em cada casa aberta. A casa com o menor domínio é a
-%   mais fácil de deduzir; se o domínio tem um só valor, a dedução é
-%   direta. Empates são desfeitos ao acaso.
+% Aplica as regras sem labeling e pega a casa que ficou com menos valores
+% possíveis
+% Se sobrou um valor só dá pra deduzir direto e empate vai no sorteio
 easiest_cell(Puzzle, Known, Open, Position, How) :-
     all_rules(Rules),
     board_model(Puzzle, Known, Rules, Towers, _Shade),
@@ -487,7 +413,7 @@ domain_size(Towers, L-C, Size) :-
     cell_at(Towers, L, C, Var),
     fd_size(Var, Size).
 
-%   exclusions(+Puzzle, +Known, +Position, +Height, -Excluded)
+% Pra cada valor diferente do certo o motivo dele não servir
 exclusions(Puzzle, Known, Position, Height, Excluded) :-
     findall(Other-Reason,
             ( between(0, 3, Other),
@@ -495,13 +421,10 @@ exclusions(Puzzle, Known, Position, Height, Excluded) :-
               why_not(Puzzle, Known, Position, Other, Reason) ),
             Excluded).
 
-%!  why_not(+Puzzle, +Known, +Position, +Height, -Reason) is det.
-%
-%   Quais regras impedem a altura Height na posição dada? Procuramos o
-%   menor conjunto de regras (uma, depois duas) com o qual o tabuleiro não
-%   tem NENHUM preenchimento que respeite as casas conhecidas e a casa
-%   testada. Quem faz a busca é o próprio Prolog: rule_subset/3 gera os
-%   candidatos por backtracking, e o primeiro que serve é o motivo.
+% why_not procura o menor grupo de regras uma e depois duas que deixa o
+% tabuleiro sem solução com esse valor na casa
+% O rule_subset gera os grupos no backtracking e o primeiro que funciona
+% é a resposta
 why_not(Puzzle, Known, L-C, Height, Reason) :-
     Candidates = [sun, lakes, row(L), col(C)],
     (   between(1, 2, Size),
@@ -511,8 +434,7 @@ why_not(Puzzle, Known, L-C, Height, Reason) :-
     ;   Reason = []
     ).
 
-%   rule_subset(+Size, +List, -Subset): os subconjuntos de List com Size
-%   elementos, na ordem da lista, um por solução.
+% Subconjuntos de List com Size elementos na ordem da lista
 rule_subset(0, _, []) :- !.
 rule_subset(Size, [X | Xs], [X | Subset]) :-
     Rest is Size - 1,
@@ -527,32 +449,26 @@ satisfiable(Puzzle, Known, Rules) :-
     once(labeling([ff], Heights)).
 
 
-/* =========================================================================
-   6. FRONTEIRA COM O PYTHON
-   =========================================================================
+%% ---- 6 Ponte com o Python ------------------------------------------
+%
+% O Janus converte dict do Python em dict do Prolog mas não converte termo
+% composto tipo cell(1, 2, 3) então esses predicados fazem a tradução
+% São só esses que o Python chama
 
-   O janus converte dicts do Python em dicts do SWI-Prolog e vice-versa,
-   mas não converte termos compostos como cell(1, 2, 3). Estes predicados
-   traduzem entre os dicts da API e os termos usados acima, e são os
-   únicos que o Python chama.
-*/
-
-%!  api_generate(+DifficultyName, -Dict) is det.
+% api_generate(NomeDoNivel, Dict)
 api_generate(Name, Dict) :-
     atom_string(Difficulty, Name),
     generate(Difficulty, Puzzle),
     puzzle_dict(Puzzle, Dict).
 
-%!  api_solve(+Dict, -Towers) is semidet.
+% api_solve(Dict, Torres)
 api_solve(Dict, Towers) :-
     puzzle_dict(Puzzle, Dict),
     solve(Puzzle, Towers).
 
-%!  api_hint(+Dict, +Placed, -HintDict) is det.
-%
-%   Placed chega como lista de [Linha, Coluna, Altura]. Se o puzzle não
-%   tem solução (só acontece com um puzzle adulterado), HintDict é
-%   _{kind: unsolvable}.
+% Placed chega como [[Linha, Coluna, Altura], ...]
+% Se o puzzle não tiver solução só se alguém mexer nele volta
+% _{kind: unsolvable}
 api_hint(Dict, PlacedLists, HintDict) :-
     puzzle_dict(Puzzle, Dict),
     maplist([[L, C, H], cell(L, C, H)] >> true, PlacedLists, Placed),
@@ -561,9 +477,9 @@ api_hint(Dict, PlacedLists, HintDict) :-
     ;   HintDict = _{kind: unsolvable}
     ).
 
-%   puzzle_dict(?Puzzle, ?Dict): nos dois sentidos. Na ida (Prolog ->
-%   Python) os sóis são átomos; na volta podem chegar como átomos ou
-%   strings, e atom_string/2 aceita os dois.
+% Funciona nos dois sentidos
+% O sol sai como átomo e pode voltar como átomo ou string e o atom_string
+% aceita os dois
 puzzle_dict(puzzle(N, Suns, Rows, Cols, Lakes, Givens),
             _{size: N, suns: SunNames, rows: Rows, cols: Cols,
               lakes: LakeLists, givens: GivenLists}) :-
@@ -595,12 +511,10 @@ rule_dict(col(C), _{rule: col, index: C}) :- !.
 rule_dict(Rule, _{rule: Rule}).
 
 
-/* =========================================================================
-   7. UTILITÁRIOS PARA O TERMINAL
-   ========================================================================= */
+%% ---- 7 Terminal ----------------------------------------------------
 
-%   Um puzzle 5 x 5 de solução única, usado nos testes.
-%   Solução: [[2,0,0,3,0], [2,0,0,0,0], [0,0,0,0,1], [0,0,0,0,2], [3,0,0,0,0]].
+% Puzzle 5x5 dos testes com solução única
+% [[2,0,0,3,0], [2,0,0,0,0], [0,0,0,0,1], [0,0,0,0,2], [3,0,0,0,0]]
 example_puzzle(puzzle(5,
                       [west, west, east, east, west],
                       [3, 2, 1, 2, 3],
@@ -609,21 +523,16 @@ example_puzzle(puzzle(5,
                       [cell(3, 0, 0), cell(4, 0, 3), cell(3, 4, 2),
                        cell(2, 4, 1), cell(1, 3, 0)])).
 
-%!  print_puzzle(+Puzzle) is det.
-%
-%   Desenha o puzzle: `~` é lago, `.` é casa desconhecida, dígitos são
-%   casas reveladas. O sol aparece no lado de onde vem; a pista da linha
-%   fica no outro lado.
+% Desenha o puzzle  ~ é lago  . é casa em aberto e número é revelada
+% O * mostra de que lado vem o sol e a pista fica do outro lado
 print_puzzle(Puzzle) :-
     Puzzle = puzzle(N, _, _, _, Lakes, Givens),
     square(N, Grid),
     fill_grid(Grid, Lakes, Givens),
     print_grid(Puzzle, Grid).
 
-%!  print_solution(+Puzzle, +Towers) is det.
-%
-%   Desenha uma solução: alturas das torres, `~` nos lagos, `#` nas
-%   casas de terra na sombra e `.` nas casas de terra ao sol.
+% Desenha a solução com as alturas  ~ nos lagos  # no terreno na sombra
+% e . no terreno no sol
 print_solution(Puzzle, Towers) :-
     Puzzle = puzzle(_, Suns, _, _, Lakes, _),
     maplist(row_shadows, Suns, Towers, Shade),
@@ -638,8 +547,8 @@ solution_symbol(0, 1, '#') :- !.
 solution_symbol(0, 0, '.') :- !.
 solution_symbol(H, _, H).
 
-%   Aqui usamos maplist, e não forall/2: forall desfaz as ligações de
-%   variáveis feitas dentro dele, e queremos justamente ligar as casas.
+% Usamos maplist e não forall porque o forall desfaz as ligações e aqui a gente
+% quer justamente ligar as casas
 fill_grid(Grid, Lakes, Givens) :-
     maplist(put_lake(Grid), Lakes),
     maplist(put_given(Grid), Givens),

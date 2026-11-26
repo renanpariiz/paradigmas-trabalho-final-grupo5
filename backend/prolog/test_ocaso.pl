@@ -1,13 +1,12 @@
-/*  test_ocaso.pl: testes do Ocaso com plunit.
+/*  test_ocaso.pl testes do Ocaso com plunit
 
-    Rodar: swipl -g run_tests -t halt backend/prolog/test_ocaso.pl
-    (ou `make test-prolog` na raiz do repositório)
+    Pra rodar  swipl -g run_tests -t halt backend/prolog/test_ocaso.pl
+    ou make test-prolog na raiz do projeto
 
-    Cada bloco begin_tests/end_tests agrupa testes de uma parte do jogo.
-    Opções úteis de test/2:
-        true(Cond)  o teste passa se Cond for verdadeira depois do corpo;
-        fail        o teste passa se o corpo FALHAR;
-        nondet      o corpo pode deixar pontos de escolha.
+    Opções do test/2 que a gente usa
+      true(Cond)  passa se Cond for verdade depois do teste
+      fail        passa se o teste falhar
+      all(...)    compara com todas as respostas
 */
 
 :- use_module(ocaso).
@@ -24,8 +23,8 @@ example_solution([[2,0,0,3,0],
                   [0,0,0,0,2],
                   [3,0,0,0,0]]).
 
-%   Auxiliares usados por vários blocos. Ficam fora dos blocos porque cada
-%   bloco begin_tests/end_tests é um módulo separado.
+% Auxiliares usados em vários blocos
+% Ficam aqui fora porque cada begin_tests/end_tests vira um módulo separado
 at(Grid, L, C, V) :-
     nth0(L, Grid, Row),
     nth0(C, Row, V).
@@ -45,18 +44,18 @@ test(sol_a_oeste, S == [0,1,1,0,1]) :-
 test(sol_a_leste, S == [1,1,0,0,0]) :-
     row_shadows(east, [0,0,2,0,0], S).
 
-% Com a sombra ainda livre, a relação tem uma única resposta e termina no
-% backtracking (antes, reverse/2 com lista sem tamanho entrava em laço).
+% Esse é por causa de um bug  com a sombra livre o reverse entrava em
+% loop no backtracking  agora tem que dar uma resposta só e parar
 test(sol_a_leste_termina, all(S == [[1,1,0,0,0]])) :-
     row_shadows(east, [0,0,2,0,0], S).
 
 test(sombra_cortada_na_borda, S == [0,0,0,0,0]) :-
     row_shadows(west, [0,0,0,0,3], S).
 
-% A relação funciona "ao contrário": dada a sombra (só a casa 3), o
-% Prolog descobre as alturas possíveis. A torre que sombreia a casa 3 só
-% pode ser a da casa 2, com altura 1; a da casa 4 pode ter qualquer
-% altura, porque a sombra dela sai do tabuleiro.
+% Testando ao contrário  só a casa 3 tem sombra então quais alturas servem
+% Quem faz sombra na casa 3 só pode ser a torre da casa 2 com altura 1
+% A torre da casa 4 pode ter qualquer altura porque a sombra dela sai do
+% tabuleiro
 test(sombra_determina_torres,
      all(Hs == [[0,0,1,0,0], [0,0,1,0,1], [0,0,1,0,2], [0,0,1,0,3]])) :-
     length(Hs, 5),
@@ -99,8 +98,8 @@ test(revelada_contraditoria, fail) :-
 
 :- begin_tests(gerador).
 
-%   forall/2 + o teste de propriedades: para cada nível, o puzzle gerado tem
-%   o tamanho certo, solução única e pistas coerentes com a solução.
+% Pra cada nível o puzzle gerado tem que ter o tamanho certo solução
+% única e pistas que batem com a solução
 test(niveis) :-
     forall(member(Level-Size, [easy-5, medium-6, hard-7]),
            ( generate(Level, P),
@@ -114,8 +113,8 @@ test(varios_puzzles_dificeis) :-
 test(nivel_desconhecido, error(type_error(_, impossible))) :-
     generate(impossible, _).
 
-%   As pistas de linha e coluna batem com a solução, os lagos estão na
-%   sombra e sem torre, nenhuma torre está na sombra e a solução é única.
+% Confere tudo  pistas de linha e coluna lagos na sombra e sem torre
+% nenhuma torre na sombra reveladas certas e solução única
 consistent(P) :-
     P = puzzle(_, Suns, Rows, Cols, Lakes, Givens),
     count_solutions(P, 2, 1),
@@ -144,17 +143,17 @@ test(dica_bate_com_a_solucao) :-
     msort(Others, Sorted),
     subtract([0,1,2,3], [H], Sorted).
 
-% Na linha 3 (sol a leste), a torre de altura 2 já sombreia as duas casas
-% pedidas pela pista. Uma torre na casa (3,1) faria mais sombra: o motivo
-% é a regra da linha 3, sozinha. why_not/5 não é exportado; chamamos com o
-% nome do módulo na frente.
+% Linha 3 com sol a leste  a torre de altura 2 já faz as duas casas de
+% sombra que a pista pede  uma torre em (3,1) faria sombra a mais então o
+% motivo é só a regra da linha 3
+% why_not/5 não é exportado por isso chamamos com ocaso: na frente
 test(motivo_da_linha, Reason == [row(3)]) :-
     example_puzzle(P),
     ocaso:why_not(P, [], 3-1, 1, Reason).
 
-% A coluna 0 soma 7 e já tem 2 em (1,0) e 3 em (4,0). Se (0,0) ficasse
-% vazia, a coluna sozinha ainda fecharia com uma torre 2 em (2,0); para
-% excluir esse caso é preciso combinar a coluna com outras regras.
+% A coluna 0 soma 7 e já tem 2 em (1,0) e 3 em (4,0)
+% Se (0,0) ficasse vazia só olhando a coluna ainda dava pra fechar com uma
+% torre 2 em (2,0) então a coluna sozinha não explica e precisa de outra regra
 test(motivo_composto, true(Reason \== [col(0)])) :-
     example_puzzle(P),
     ocaso:why_not(P, [cell(1, 0, 2)], 0-0, 0, Reason).
@@ -163,8 +162,8 @@ test(casa_errada_e_apontada, Hint = wrong(0, 0, 1, _)) :-
     example_puzzle(P),
     hint(P, [cell(4, 4, 0), cell(0, 0, 1)], Hint).
 
-% A torre de altura 2 em (1,0) faz sombra em (1,1) e (1,2). Uma torre em
-% (1,1) ficaria na sombra: a regra do sol, sozinha, basta.
+% A torre 2 em (1,0) faz sombra em (1,1) e (1,2)
+% Torre em (1,1) ficaria na sombra então só a regra do sol já basta
 test(motivo_do_sol, Hint = wrong(1, 1, 1, [sun])) :-
     example_puzzle(P),
     hint(P, [cell(1, 0, 2), cell(1, 1, 1)], Hint).

@@ -75,7 +75,7 @@ Elm (navegador) --HTTP/JSON--> FastAPI (Python) --janus--> SWI-Prolog
 
 | Parte | Responsabilidade | Arquivos principais |
 |-------|------------------|---------------------|
-| Prolog | Modelar regras, buscar soluções, gerar puzzles e explicar dicas | [`backend/prolog/ocaso.pl:108`](backend/prolog/ocaso.pl) |
+| Prolog | Modelar regras, buscar soluções, gerar puzzles e explicar dicas | [`backend/prolog/ocaso.pl:80`](backend/prolog/ocaso.pl) |
 | Python | Validar JSON e encaminhar chamadas para Prolog, sem regras do jogo | [`backend/app/prolog.py:16`](backend/app/prolog.py), [`backend/app/main.py:19`](backend/app/main.py) |
 | Elm | Domínio puro, textos das dicas, decodificação JSON, estado da aplicação e interface | [`frontend/src/Ocaso.elm:46`](frontend/src/Ocaso.elm), [`frontend/src/Hint.elm:52`](frontend/src/Hint.elm), [`frontend/src/Api.elm:68`](frontend/src/Api.elm), [`frontend/src/Main.elm:76`](frontend/src/Main.elm) |
 
@@ -85,22 +85,22 @@ Elm (navegador) --HTTP/JSON--> FastAPI (Python) --janus--> SWI-Prolog
 
 | Predicado | Local | O que faz |
 |-----------|-------|-----------|
-| `row_shadows(?Sun, ?Heights, ?Shade)` | [`backend/prolog/ocaso.pl:108`](backend/prolog/ocaso.pl) | Relaciona alturas e sombras nos dois sentidos; para sol a leste, inverte a linha. |
-| `solve(+Puzzle, -Towers)` | [`backend/prolog/ocaso.pl:242`](backend/prolog/ocaso.pl) | Impõe as regras e procura uma solução. |
-| `count_solutions(+Puzzle, +Limit, -Count)` | [`backend/prolog/ocaso.pl:258`](backend/prolog/ocaso.pl) | Conta soluções até um limite, usado para testar unicidade. |
-| `generate(+Difficulty, -Puzzle)` | [`backend/prolog/ocaso.pl:288`](backend/prolog/ocaso.pl) | Gera tabuleiro, pistas, lagos e revelações com solução única. |
-| `hint(+Puzzle, +Placed, -Hint)` | [`backend/prolog/ocaso.pl:438`](backend/prolog/ocaso.pl) | Deduz uma casa, aponta uma decisão errada ou identifica o puzzle completo. |
-| `api_generate/2`, `api_solve/2`, `api_hint/3` | [`backend/prolog/ocaso.pl:541`](backend/prolog/ocaso.pl) | Convertem os dados JSON e os termos internos do jogo. |
+| `row_shadows(?Sun, ?Heights, ?Shade)` | [`backend/prolog/ocaso.pl:80`](backend/prolog/ocaso.pl) | Relaciona alturas e sombras nos dois sentidos; para sol a leste, inverte a linha. |
+| `solve(+Puzzle, -Towers)` | [`backend/prolog/ocaso.pl:198`](backend/prolog/ocaso.pl) | Impõe as regras e procura uma solução. |
+| `count_solutions(+Puzzle, +Limit, -Count)` | [`backend/prolog/ocaso.pl:211`](backend/prolog/ocaso.pl) | Conta soluções até um limite, usado para testar unicidade. |
+| `generate(+Difficulty, -Puzzle)` | [`backend/prolog/ocaso.pl:235`](backend/prolog/ocaso.pl) | Gera tabuleiro, pistas, lagos e revelações com solução única. |
+| `hint(+Puzzle, +Placed, -Hint)` | [`backend/prolog/ocaso.pl:368`](backend/prolog/ocaso.pl) | Deduz uma casa, aponta uma decisão errada ou identifica o puzzle completo. |
+| `api_generate/2`, `api_solve/2`, `api_hint/3` | [`backend/prolog/ocaso.pl:459`](backend/prolog/ocaso.pl) | Convertem os dados JSON e os termos internos do jogo. |
 
 ### 5.2 Conceitos do paradigma lógico utilizados
 
-- [x] Unificação e casamento de padrões: conversão de puzzles e regras em [`backend/prolog/ocaso.pl:567`](backend/prolog/ocaso.pl).
-- [x] Recursão sobre listas: o percurso recursivo da linha em [`backend/prolog/ocaso.pl:125`](backend/prolog/ocaso.pl).
-- [x] Backtracking e múltiplas soluções: `solution/3`, `labeling/2` e contagem limitada em [`backend/prolog/ocaso.pl:248`](backend/prolog/ocaso.pl).
-- [x] `findall/3`: candidatos a lagos, revelações e valores excluídos em [`backend/prolog/ocaso.pl:348`](backend/prolog/ocaso.pl).
-- [x] Corte (`!`) e negação (`\+`): seleção determinística em [`backend/prolog/ocaso.pl:244`](backend/prolog/ocaso.pl) e exclusão de posições fixas em [`backend/prolog/ocaso.pl:396`](backend/prolog/ocaso.pl).
-- [x] CLP(FD): variáveis de altura, restrições de sombras e pistas em [`backend/prolog/ocaso.pl:171`](backend/prolog/ocaso.pl).
-- [x] Predicados de ordem superior: `maplist/…` em [`backend/prolog/ocaso.pl:172`](backend/prolog/ocaso.pl) e `foldl/…` em [`backend/prolog/ocaso.pl:381`](backend/prolog/ocaso.pl).
+- [x] Unificação e casamento de padrões: conversão de puzzles e regras em [`backend/prolog/ocaso.pl:483`](backend/prolog/ocaso.pl).
+- [x] Recursão sobre listas: o percurso recursivo da linha em [`backend/prolog/ocaso.pl:94`](backend/prolog/ocaso.pl).
+- [x] Backtracking e múltiplas soluções: `solution/3`, `labeling/2` e contagem limitada em [`backend/prolog/ocaso.pl:203`](backend/prolog/ocaso.pl).
+- [x] `findall/3`: candidatos a lagos, revelações e valores excluídos em [`backend/prolog/ocaso.pl:290`](backend/prolog/ocaso.pl).
+- [x] Corte (`!`) e negação (`\+`): seleção determinística em [`backend/prolog/ocaso.pl:200`](backend/prolog/ocaso.pl) e exclusão de posições fixas em [`backend/prolog/ocaso.pl:335`](backend/prolog/ocaso.pl).
+- [x] CLP(FD): variáveis de altura, restrições de sombras e pistas em [`backend/prolog/ocaso.pl:133`](backend/prolog/ocaso.pl).
+- [x] Predicados de ordem superior: `maplist/…` em [`backend/prolog/ocaso.pl:134`](backend/prolog/ocaso.pl) e `foldl/…` em [`backend/prolog/ocaso.pl:321`](backend/prolog/ocaso.pl).
 
 ### 5.3 Trecho em destaque
 
@@ -114,7 +114,7 @@ row_shadows(east, Heights, Shade) :-
     cast(ReversedHeights, [], ReversedShade).
 ```
 
-([`backend/prolog/ocaso.pl:108`](backend/prolog/ocaso.pl))
+([`backend/prolog/ocaso.pl:80`](backend/prolog/ocaso.pl))
 
 Esse predicado descreve a relação entre a linha de alturas e sua sombra. No
 caso oeste, `cast/3` percorre as casas e restringe a sombra conforme as
@@ -230,7 +230,7 @@ implementa as regras de sombra, restrições ou busca.
 
 ## 8. Testes e validação
 
-- O arquivo [`backend/prolog/test_ocaso.pl:42`](backend/prolog/test_ocaso.pl)
+- O arquivo [`backend/prolog/test_ocaso.pl:41`](backend/prolog/test_ocaso.pl)
   tem 22 testes plunit para sombras, regras, unicidade, geração e dicas,
   todos passando com o SWI-Prolog 11 e sem avisos.
 - [`backend/tests/test_api.py:32`](backend/tests/test_api.py) cobre níveis,
